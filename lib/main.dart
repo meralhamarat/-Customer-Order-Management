@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() => runApp(MyApp());
 
@@ -28,8 +30,47 @@ class _CustomerOrderScreenState extends State<CustomerOrderScreen> {
   final TextEditingController _orderQuantityController = TextEditingController();
   final TextEditingController _customerAddressController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
-
   String _searchQuery = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  void _saveData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final customerData = _customers.map((customer) => {
+          'name': customer.name,
+          'orders': customer.orders.map((order) => {
+                'details': order.details,
+                'quantity': order.quantity,
+                'address': order.address,
+              }).toList(),
+        }).toList();
+    prefs.setString('customers', jsonEncode(customerData));
+  }
+
+  void _loadData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final data = prefs.getString('customers');
+    if (data != null) {
+      final List<dynamic> decodedData = jsonDecode(data);
+      setState(() {
+        _customers.clear();
+        decodedData.forEach((customer) {
+          _customers.add(Customer(
+            name: customer['name'],
+            orders: (customer['orders'] as List<dynamic>).map((order) => Order(
+                  details: order['details'],
+                  quantity: order['quantity'],
+                  address: order['address'],
+                )).toList(),
+          ));
+        });
+      });
+    }
+  }
 
   void _addCustomer(String name) {
     if (name.isNotEmpty) {
@@ -37,9 +78,17 @@ class _CustomerOrderScreenState extends State<CustomerOrderScreen> {
         _customers.add(Customer(name: name));
       });
       _customerNameController.clear();
+      _saveData();
     } else {
       _showErrorDialog('Müşteri adı boş olamaz.');
     }
+  }
+
+  void _removeCustomer(int index) {
+    setState(() {
+      _customers.removeAt(index);
+    });
+    _saveData();
   }
 
   void _addOrder(int customerIndex, String details, int quantity, String address) {
@@ -48,19 +97,34 @@ class _CustomerOrderScreenState extends State<CustomerOrderScreen> {
       return;
     }
     setState(() {
-      _customers[customerIndex].orders.add(
-        Order(details: details, quantity: quantity, address: address),
-      );
+      _customers[customerIndex].orders.add(Order(details: details, quantity: quantity, address: address));
     });
     _orderDetailsController.clear();
     _orderQuantityController.clear();
     _customerAddressController.clear();
+    _saveData();
+  }
+
+  void _updateOrder(int customerIndex, int orderIndex, String newDetails, int newQuantity, String newAddress) {
+    if (newDetails.isNotEmpty && newQuantity > 0 && newAddress.isNotEmpty) {
+      setState(() {
+        _customers[customerIndex].orders[orderIndex] = Order(
+          details: newDetails,
+          quantity: newQuantity,
+          address: newAddress,
+        );
+      });
+      _saveData();
+    } else {
+      _showErrorDialog('Lütfen tüm bilgileri doldurun.');
+    }
   }
 
   void _removeOrder(int customerIndex, int orderIndex) {
     setState(() {
       _customers[customerIndex].orders.removeAt(orderIndex);
     });
+    _saveData();
   }
 
   void _showErrorDialog(String message) {
@@ -73,6 +137,41 @@ class _CustomerOrderScreenState extends State<CustomerOrderScreen> {
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: Text('Tamam'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showUpdateOrderDialog(int customerIndex, int orderIndex, Order order) {
+    TextEditingController detailsController = TextEditingController(text: order.details);
+    TextEditingController quantityController = TextEditingController(text: order.quantity.toString());
+    TextEditingController addressController = TextEditingController(text: order.address);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Sipariş Güncelle'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: detailsController, decoration: InputDecoration(labelText: 'Sipariş Detayları')),
+            TextField(controller: quantityController, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: 'Ürün Miktarı')),
+            TextField(controller: addressController, decoration: InputDecoration(labelText: 'Adres')),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('İptal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              _updateOrder(customerIndex, orderIndex, detailsController.text,
+                  int.tryParse(quantityController.text) ?? 0, addressController.text);
+              Navigator.of(ctx).pop();
+            },
+            child: Text('Güncelle'),
           ),
         ],
       ),
@@ -92,6 +191,10 @@ class _CustomerOrderScreenState extends State<CustomerOrderScreen> {
               final customer = filteredCustomers[index];
               return ExpansionTile(
                 title: Text(customer.name),
+                trailing: IconButton(
+                  icon: Icon(Icons.delete, color: Colors.red),
+                  onPressed: () => _removeCustomer(index),
+                ),
                 children: [
                   ...customer.orders.map((order) {
                     int orderIndex = customer.orders.indexOf(order);
@@ -106,9 +209,18 @@ class _CustomerOrderScreenState extends State<CustomerOrderScreen> {
                             Text('Adres: ${order.address}'),
                           ],
                         ),
-                        trailing: IconButton(
-                          icon: Icon(Icons.delete, color: Colors.red),
-                          onPressed: () => _removeOrder(index, orderIndex),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: Icon(Icons.edit, color: Colors.orange),
+                              onPressed: () => _showUpdateOrderDialog(index, orderIndex, order),
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.delete, color: Colors.red),
+                              onPressed: () => _removeOrder(index, orderIndex),
+                            ),
+                          ],
                         ),
                       ),
                     );
@@ -117,19 +229,9 @@ class _CustomerOrderScreenState extends State<CustomerOrderScreen> {
                     padding: const EdgeInsets.all(8.0),
                     child: Column(
                       children: [
-                        TextField(
-                          controller: _orderDetailsController,
-                          decoration: InputDecoration(labelText: 'Sipariş Detayları'),
-                        ),
-                        TextField(
-                          controller: _orderQuantityController,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(labelText: 'Ürün Miktarı'),
-                        ),
-                        TextField(
-                          controller: _customerAddressController,
-                          decoration: InputDecoration(labelText: 'Adres'),
-                        ),
+                        TextField(controller: _orderDetailsController, decoration: InputDecoration(labelText: 'Sipariş Detayları')),
+                        TextField(controller: _orderQuantityController, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: 'Ürün Miktarı')),
+                        TextField(controller: _customerAddressController, decoration: InputDecoration(labelText: 'Adres')),
                         SizedBox(height: 8.0),
                         ElevatedButton(
                           onPressed: () => _addOrder(
