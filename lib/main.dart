@@ -10,9 +10,16 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Müşteri ve Sipariş Yönetimi',
       theme: ThemeData(
+        brightness: Brightness.light,
         primarySwatch: Colors.blue,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
+      darkTheme: ThemeData(
+        brightness: Brightness.dark,
+        primarySwatch: Colors.blue,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+      ),
+      themeMode: ThemeMode.system,
       home: CustomerOrderScreen(),
     );
   }
@@ -23,31 +30,55 @@ class CustomerOrderScreen extends StatefulWidget {
   _CustomerOrderScreenState createState() => _CustomerOrderScreenState();
 }
 
-class _CustomerOrderScreenState extends State<CustomerOrderScreen> {
+class _CustomerOrderScreenState extends State<CustomerOrderScreen>
+    with SingleTickerProviderStateMixin {
   final List<Customer> _customers = [];
   final TextEditingController _customerNameController = TextEditingController();
   final TextEditingController _orderDetailsController = TextEditingController();
-  final TextEditingController _orderQuantityController = TextEditingController();
-  final TextEditingController _customerAddressController = TextEditingController();
+  final TextEditingController _orderQuantityController =
+      TextEditingController();
+  final TextEditingController _customerAddressController =
+      TextEditingController();
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+
+  late AnimationController _animationController;
+  late Animation<double> _animation;
 
   @override
   void initState() {
     super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _animation = CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOut,
+    );
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
   }
 
   void _saveData() async {
     final prefs = await SharedPreferences.getInstance();
-    final customerData = _customers.map((customer) => {
-          'name': customer.name,
-          'orders': customer.orders.map((order) => {
-                'details': order.details,
-                'quantity': order.quantity,
-                'address': order.address,
-              }).toList(),
-        }).toList();
+    final customerData = _customers
+        .map((customer) => {
+              'name': customer.name,
+              'orders': customer.orders
+                  .map((order) => {
+                        'details': order.details,
+                        'quantity': order.quantity,
+                        'address': order.address,
+                      })
+                  .toList(),
+            })
+        .toList();
     prefs.setString('customers', jsonEncode(customerData));
   }
 
@@ -61,11 +92,13 @@ class _CustomerOrderScreenState extends State<CustomerOrderScreen> {
         decodedData.forEach((customer) {
           _customers.add(Customer(
             name: customer['name'],
-            orders: (customer['orders'] as List<dynamic>).map((order) => Order(
-                  details: order['details'],
-                  quantity: order['quantity'],
-                  address: order['address'],
-                )).toList(),
+            orders: (customer['orders'] as List<dynamic>)
+                .map((order) => Order(
+                      details: order['details'],
+                      quantity: order['quantity'],
+                      address: order['address'],
+                    ))
+                .toList(),
           ));
         });
       });
@@ -76,6 +109,7 @@ class _CustomerOrderScreenState extends State<CustomerOrderScreen> {
     if (name.isNotEmpty) {
       setState(() {
         _customers.add(Customer(name: name));
+        _animationController.forward(from: 0.0);
       });
       _customerNameController.clear();
       _saveData();
@@ -91,39 +125,22 @@ class _CustomerOrderScreenState extends State<CustomerOrderScreen> {
     _saveData();
   }
 
-  void _addOrder(int customerIndex, String details, int quantity, String address) {
+  void _addOrder(
+      int customerIndex, String details, int quantity, String address) {
     if (details.isEmpty || quantity <= 0 || address.isEmpty) {
-      _showErrorDialog('Lütfen tüm sipariş bilgilerini doğru şekilde doldurun.');
+      _showErrorDialog(
+          'Lütfen tüm sipariş bilgilerini doğru şekilde doldurun.');
       return;
     }
     setState(() {
-      _customers[customerIndex].orders.add(Order(details: details, quantity: quantity, address: address));
+      _customers[customerIndex]
+          .orders
+          .add(Order(details: details, quantity: quantity, address: address));
+      _animationController.forward(from: 0.0);
     });
     _orderDetailsController.clear();
     _orderQuantityController.clear();
     _customerAddressController.clear();
-    _saveData();
-  }
-
-  void _updateOrder(int customerIndex, int orderIndex, String newDetails, int newQuantity, String newAddress) {
-    if (newDetails.isNotEmpty && newQuantity > 0 && newAddress.isNotEmpty) {
-      setState(() {
-        _customers[customerIndex].orders[orderIndex] = Order(
-          details: newDetails,
-          quantity: newQuantity,
-          address: newAddress,
-        );
-      });
-      _saveData();
-    } else {
-      _showErrorDialog('Lütfen tüm bilgileri doldurun.');
-    }
-  }
-
-  void _removeOrder(int customerIndex, int orderIndex) {
-    setState(() {
-      _customers[customerIndex].orders.removeAt(orderIndex);
-    });
     _saveData();
   }
 
@@ -143,44 +160,10 @@ class _CustomerOrderScreenState extends State<CustomerOrderScreen> {
     );
   }
 
-  void _showUpdateOrderDialog(int customerIndex, int orderIndex, Order order) {
-    TextEditingController detailsController = TextEditingController(text: order.details);
-    TextEditingController quantityController = TextEditingController(text: order.quantity.toString());
-    TextEditingController addressController = TextEditingController(text: order.address);
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Sipariş Güncelle'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: detailsController, decoration: InputDecoration(labelText: 'Sipariş Detayları')),
-            TextField(controller: quantityController, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: 'Ürün Miktarı')),
-            TextField(controller: addressController, decoration: InputDecoration(labelText: 'Adres')),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('İptal'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              _updateOrder(customerIndex, orderIndex, detailsController.text,
-                  int.tryParse(quantityController.text) ?? 0, addressController.text);
-              Navigator.of(ctx).pop();
-            },
-            child: Text('Güncelle'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildCustomerList() {
     final filteredCustomers = _customers
-        .where((customer) => customer.name.toLowerCase().contains(_searchQuery.toLowerCase()))
+        .where((customer) =>
+            customer.name.toLowerCase().contains(_searchQuery.toLowerCase()))
         .toList();
 
     return filteredCustomers.isEmpty
@@ -189,77 +172,28 @@ class _CustomerOrderScreenState extends State<CustomerOrderScreen> {
             itemCount: filteredCustomers.length,
             itemBuilder: (context, index) {
               final customer = filteredCustomers[index];
-              return ExpansionTile(
-                title: Text(customer.name),
-                trailing: IconButton(
-                  icon: Icon(Icons.delete, color: Colors.red),
-                  onPressed: () => _removeCustomer(index),
-                ),
-                children: [
-                  ...customer.orders.map((order) {
-                    int orderIndex = customer.orders.indexOf(order);
-                    return Card(
-                      margin: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                      child: ListTile(
-                        title: Text('Sipariş Detayları: ${order.details}'),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Ürün Miktarı: ${order.quantity}'),
-                            Text('Adres: ${order.address}'),
-                          ],
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: Icon(Icons.edit, color: Colors.orange),
-                              onPressed: () => _showUpdateOrderDialog(index, orderIndex, order),
-                            ),
-                            IconButton(
-                              icon: Icon(Icons.delete, color: Colors.red),
-                              onPressed: () => _removeOrder(index, orderIndex),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                  Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: Column(
-                      children: [
-                        TextField(controller: _orderDetailsController, decoration: InputDecoration(labelText: 'Sipariş Detayları')),
-                        TextField(controller: _orderQuantityController, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: 'Ürün Miktarı')),
-                        TextField(controller: _customerAddressController, decoration: InputDecoration(labelText: 'Adres')),
-                        SizedBox(height: 8.0),
-                        ElevatedButton(
-                          onPressed: () => _addOrder(
-                            _customers.indexOf(customer),
-                            _orderDetailsController.text,
-                            int.tryParse(_orderQuantityController.text) ?? 0,
-                            _customerAddressController.text,
-                          ),
-                          child: Text('Sipariş Ekle'),
-                        ),
-                      ],
+              return FadeTransition(
+                opacity: _animation,
+                child: Card(
+                  margin: EdgeInsets.all(8.0),
+                  child: ExpansionTile(
+                    title: Text(customer.name),
+                    trailing: IconButton(
+                      icon: Icon(Icons.delete, color: Colors.red),
+                      onPressed: () => _removeCustomer(index),
                     ),
+                    children: customer.orders.map((order) {
+                      return ListTile(
+                        title: Text('Sipariş Detayları: ${order.details}'),
+                        subtitle: Text(
+                            'Ürün Miktarı: ${order.quantity}, Adres: ${order.address}'),
+                      );
+                    }).toList(),
                   ),
-                ],
+                ),
               );
             },
           );
-  }
-
-  Widget _buildSummary() {
-    int totalOrders = _customers.fold(0, (sum, customer) => sum + customer.orders.length);
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: Text(
-        'Toplam Müşteri: ${_customers.length}, Toplam Sipariş: $totalOrders',
-        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-      ),
-    );
   }
 
   @override
@@ -267,6 +201,18 @@ class _CustomerOrderScreenState extends State<CustomerOrderScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Müşteri ve Sipariş Yönetimi'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.brightness_6),
+            onPressed: () {
+              ThemeMode themeMode =
+                  Theme.of(context).brightness == Brightness.dark
+                      ? ThemeMode.light
+                      : ThemeMode.dark;
+              MyApp();
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -286,28 +232,14 @@ class _CustomerOrderScreenState extends State<CustomerOrderScreen> {
               },
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _customerNameController,
-                    decoration: InputDecoration(labelText: 'Müşteri Adı'),
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.add),
-                  onPressed: () => _addCustomer(_customerNameController.text),
-                ),
-              ],
-            ),
-          ),
-          _buildSummary(),
           Expanded(
             child: _buildCustomerList(),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _addCustomer(_customerNameController.text),
+        child: Icon(Icons.add),
       ),
     );
   }
