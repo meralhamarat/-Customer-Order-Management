@@ -182,11 +182,22 @@ class _CustomerOrderScreenState extends State<CustomerOrderScreen>
                       icon: Icon(Icons.delete, color: Colors.red),
                       onPressed: () => _removeCustomer(index),
                     ),
-                    children: customer.orders.map((order) {
+                    children: customer.orders.asMap().entries.map((entry) {
+                      int orderIndex = entry.key;
+                      Order order = entry.value;
                       return ListTile(
                         title: Text('Sipariş Detayları: ${order.details}'),
                         subtitle: Text(
                             'Ürün Miktarı: ${order.quantity}, Adres: ${order.address}'),
+                        trailing: IconButton(
+                          icon: Icon(Icons.delete, color: Colors.red),
+                          onPressed: () {
+                            setState(() {
+                              customer.orders.removeAt(orderIndex);
+                            });
+                            _saveData();
+                          },
+                        ),
                       );
                     }).toList(),
                   ),
