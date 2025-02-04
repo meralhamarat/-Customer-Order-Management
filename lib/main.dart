@@ -2,265 +2,58 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-void main() => runApp(MyApp());
-
-class MyApp extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Müşteri ve Sipariş Yönetimi',
-      theme: ThemeData(
-        brightness: Brightness.light,
-        primarySwatch: Colors.blue,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-      ),
-      darkTheme: ThemeData(
-        brightness: Brightness.dark,
-        primarySwatch: Colors.blue,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-      ),
-      themeMode: ThemeMode.system,
-      home: CustomerOrderScreen(),
-    );
-  }
+void main() {
+  runApp(MyApp());
 }
 
-class CustomerOrderScreen extends StatefulWidget {
+class MyApp extends StatefulWidget {
   @override
-  _CustomerOrderScreenState createState() => _CustomerOrderScreenState();
+  _MyAppState createState() => _MyAppState();
 }
 
-class _CustomerOrderScreenState extends State<CustomerOrderScreen>
-    with SingleTickerProviderStateMixin {
-  final List<Customer> _customers = [];
-  final TextEditingController _customerNameController = TextEditingController();
-  final TextEditingController _orderDetailsController = TextEditingController();
-  final TextEditingController _orderQuantityController =
-      TextEditingController();
-  final TextEditingController _customerAddressController =
-      TextEditingController();
-  final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
+class _MyAppState extends State<MyApp> {
+  ThemeMode _themeMode = ThemeMode.light;
 
-  late AnimationController _animationController;
-  late Animation<double> _animation;
-
-  @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _animation = CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeInOut,
-    );
-    _loadData();
-  }
-
-  @override
-  void dispose() {
-    _animationController.dispose();
-    super.dispose();
-  }
-
-  void _saveData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final customerData = _customers
-        .map((customer) => {
-              'name': customer.name,
-              'orders': customer.orders
-                  .map((order) => {
-                        'details': order.details,
-                        'quantity': order.quantity,
-                        'address': order.address,
-                      })
-                  .toList(),
-            })
-        .toList();
-    prefs.setString('customers', jsonEncode(customerData));
-  }
-
-  void _loadData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final data = prefs.getString('customers');
-    if (data != null) {
-      final List<dynamic> decodedData = jsonDecode(data);
-      setState(() {
-        _customers.clear();
-        decodedData.forEach((customer) {
-          _customers.add(Customer(
-            name: customer['name'],
-            orders: (customer['orders'] as List<dynamic>)
-                .map((order) => Order(
-                      details: order['details'],
-                      quantity: order['quantity'],
-                      address: order['address'],
-                    ))
-                .toList(),
-          ));
-        });
-      });
-    }
-  }
-
-  void _addCustomer(String name) {
-    if (name.isNotEmpty) {
-      setState(() {
-        _customers.add(Customer(name: name));
-        _animationController.forward(from: 0.0);
-      });
-      _customerNameController.clear();
-      _saveData();
-    } else {
-      _showErrorDialog('Müşteri adı boş olamaz.');
-    }
-  }
-
-  void _removeCustomer(int index) {
+  void _toggleTheme() {
     setState(() {
-      _customers.removeAt(index);
+      _themeMode =
+          _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
     });
-    _saveData();
-  }
-
-  void _addOrder(
-      int customerIndex, String details, int quantity, String address) {
-    if (details.isEmpty || quantity <= 0 || address.isEmpty) {
-      _showErrorDialog(
-          'Lütfen tüm sipariş bilgilerini doğru şekilde doldurun.');
-      return;
-    }
-    setState(() {
-      _customers[customerIndex]
-          .orders
-          .add(Order(details: details, quantity: quantity, address: address));
-      _animationController.forward(from: 0.0);
-    });
-    _orderDetailsController.clear();
-    _orderQuantityController.clear();
-    _customerAddressController.clear();
-    _saveData();
-  }
-
-  void _showErrorDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Hata'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Tamam'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCustomerList() {
-    final filteredCustomers = _customers
-        .where((customer) =>
-            customer.name.toLowerCase().contains(_searchQuery.toLowerCase()))
-        .toList();
-
-    return filteredCustomers.isEmpty
-        ? Center(child: Text('Hiç müşteri bulunamadı.'))
-        : ListView.builder(
-            itemCount: filteredCustomers.length,
-            itemBuilder: (context, index) {
-              final customer = filteredCustomers[index];
-              return FadeTransition(
-                opacity: _animation,
-                child: Card(
-                  margin: EdgeInsets.all(8.0),
-                  child: ExpansionTile(
-                    title: Text(customer.name),
-                    trailing: IconButton(
-                      icon: Icon(Icons.delete, color: Colors.red),
-                      onPressed: () => _removeCustomer(index),
-                    ),
-                    children: customer.orders.asMap().entries.map((entry) {
-                      int orderIndex = entry.key;
-                      Order order = entry.value;
-                      return ListTile(
-                        title: Text('Sipariş Detayları: ${order.details}'),
-                        subtitle: Text(
-                            'Ürün Miktarı: ${order.quantity}, Adres: ${order.address}'),
-                        trailing: IconButton(
-                          icon: Icon(Icons.delete, color: Colors.red),
-                          onPressed: () {
-                            setState(() {
-                              customer.orders.removeAt(orderIndex);
-                            });
-                            _saveData();
-                          },
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-              );
-            },
-          );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Müşteri ve Sipariş Yönetimi'),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.brightness_6),
-            onPressed: () {
-              ThemeMode themeMode =
-                  Theme.of(context).brightness == Brightness.dark
-                      ? ThemeMode.light
-                      : ThemeMode.dark;
-              MyApp();
-            },
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                labelText: 'Müşteri Ara',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
-              ),
-              onChanged: (value) {
-                setState(() {
-                  _searchQuery = value;
-                });
-              },
-            ),
-          ),
-          Expanded(
-            child: _buildCustomerList(),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _addCustomer(_customerNameController.text),
-        child: Icon(Icons.add),
-      ),
+    return MaterialApp(
+      themeMode: _themeMode,
+      theme: ThemeData.light(),
+      darkTheme: ThemeData.dark(),
+      home: CustomerOrderApp(toggleTheme: _toggleTheme),
     );
   }
 }
 
 class Customer {
+  String id;
   String name;
-  List<Order> orders = [];
+  List<Order> orders;
 
-  Customer({required this.name});
+  Customer({required this.id, required this.name, this.orders = const []});
+
+  factory Customer.fromJson(Map<String, dynamic> json) {
+    return Customer(
+      id: json['id'],
+      name: json['name'],
+      orders: (json['orders'] as List).map((o) => Order.fromJson(o)).toList(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'orders': orders.map((o) => o.toJson()).toList(),
+    };
+  }
 }
 
 class Order {
@@ -269,4 +62,121 @@ class Order {
   String address;
 
   Order({required this.details, required this.quantity, required this.address});
+
+  factory Order.fromJson(Map<String, dynamic> json) {
+    return Order(
+      details: json['details'],
+      quantity: json['quantity'],
+      address: json['address'],
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'details': details,
+      'quantity': quantity,
+      'address': address,
+    };
+  }
+}
+
+class CustomerOrderApp extends StatefulWidget {
+  final VoidCallback toggleTheme;
+  CustomerOrderApp({required this.toggleTheme});
+
+  @override
+  _CustomerOrderAppState createState() => _CustomerOrderAppState();
+}
+
+class _CustomerOrderAppState extends State<CustomerOrderApp> {
+  List<Customer> _customers = [];
+  final TextEditingController _customerNameController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  void _addCustomer(String name) {
+    if (name.isNotEmpty) {
+      setState(() {
+        _customers.add(Customer(id: UniqueKey().toString(), name: name));
+      });
+      _customerNameController.clear();
+      _saveData();
+    }
+  }
+
+  void _removeCustomer(String customerId) {
+    setState(() {
+      _customers.removeWhere((customer) => customer.id == customerId);
+    });
+    _saveData();
+  }
+
+  void _saveData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final customerData = jsonEncode(_customers.map((c) => c.toJson()).toList());
+    prefs.setString('customers', customerData);
+  }
+
+  void _loadData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final customerData = prefs.getString('customers');
+    if (customerData != null) {
+      setState(() {
+        _customers = (jsonDecode(customerData) as List)
+            .map((c) => Customer.fromJson(c))
+            .toList();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text("Customer Management"),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.brightness_6),
+            onPressed: widget.toggleTheme,
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: EdgeInsets.all(16.0),
+            child: TextField(
+              controller: _customerNameController,
+              decoration: InputDecoration(
+                labelText: "Enter Customer Name",
+                suffixIcon: IconButton(
+                  icon: Icon(Icons.add),
+                  onPressed: () => _addCustomer(_customerNameController.text),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              itemCount: _customers.length,
+              itemBuilder: (context, index) {
+                final customer = _customers[index];
+                return ListTile(
+                  title: Text(customer.name),
+                  trailing: IconButton(
+                    icon: Icon(Icons.delete, color: Colors.red),
+                    onPressed: () => _removeCustomer(customer.id),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
